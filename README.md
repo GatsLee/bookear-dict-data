@@ -45,6 +45,8 @@ CREATE INDEX idx_sense_kr_lemma ON sense_kr(lemma);
 
 Requires Python 3.11+ and `lxml` (for tolerant KRDict XML parsing).
 
+### Path A — from the 2021 GitHub mirror (snapshot)
+
 ```bash
 # 1. OEWN 2025
 curl -L -o data/oewn-2025.xml.gz https://en-word.net/static/english-wordnet-2025.xml.gz
@@ -60,6 +62,35 @@ python3 -m venv .venv && .venv/bin/pip install lxml
 .venv/bin/python scripts/build_oewn.py   data/oewn-2025.xml build/oewn.sqlite
 .venv/bin/python scripts/build_krdict.py data/krdict        build/krdict.sqlite
 .venv/bin/python scripts/merge.py        build/oewn.sqlite build/krdict.sqlite build/bookear-dict-v1.sqlite
+```
+
+### Path B — from the NIKL Open API (live refresh)
+
+Requires a personal API key from <https://krdict.korean.go.kr/eng/openApi/openApiInfo> (free, 50,000 calls/day). Produces cleaner output because each English lemma is filtered against OEWN, so multi-word phrases and junk translations are dropped.
+
+```bash
+# 1. OEWN 2025 (same as Path A)
+# 2. 2021 mirror for the target_code list (same as Path A)
+
+# 3. Extract the list of target_codes we want to refresh
+.venv/bin/python scripts/extract_target_codes.py data/krdict data/target_codes.txt
+
+# 4. Dump — resumable. Respects 48,000-call/day safety guard.
+#    Rerun next day to continue from where it left off.
+export KRDICT_API_KEY=<your-32-hex-key>
+.venv/bin/python scripts/fetch_krdict_api.py \
+  --codes data/target_codes.txt \
+  --out data/krdict-api-dump.jsonl
+
+# 5. Build the refreshed SQLite, keeping only English lemmas that match OEWN
+.venv/bin/python scripts/build_krdict_from_api.py \
+  data/krdict-api-dump.jsonl \
+  build/oewn.sqlite \
+  build/krdict.sqlite
+
+# 6. Merge as before
+.venv/bin/python scripts/merge.py \
+  build/oewn.sqlite build/krdict.sqlite build/bookear-dict-v1.sqlite
 ```
 
 ## Sample queries
