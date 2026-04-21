@@ -25,7 +25,9 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -39,7 +41,7 @@ except ImportError:
 
 API_VIEW = "https://krdict.korean.go.kr/api/view"
 DAILY_LIMIT_GUARD = 48_000  # leave headroom below the 50,000 quota
-RATE_SLEEP_SEC = 0.12       # ≈ 8 req/s; well within server tolerance
+RATE_SLEEP_SEC = 0.12       # per-worker; multiple workers ≈ this many parallel
 TRANS_LANG_ENGLISH = "1"
 
 
@@ -162,13 +164,20 @@ def already_fetched(out_path: Path) -> set[int]:
     return seen
 
 
-def run(out_path: Path, codes: list[int], key: str) -> None:
+def run(out_path: Path, codes: list[int], key: str, workers: int = 1) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     seen = already_fetched(out_path)
     total = len(codes)
     pending = [c for c in codes if c not in seen]
-    print(f"[fetch] total={total:,} already={len(seen):,} pending={len(pending):,}")
+    print(f"[fetch] total={total:,} already={len(seen):,} pending={len(pending):,} workers={workers}")
 
+    if workers <= 1:
+        run_serial(out_path, pending, key)
+    else:
+        run_parallel(out_path, pending, key, workers)
+
+
+def run_serial(out_path: Path, pending: list[int], key: str) -> None:
     calls_this_run = 0
     collected = 0
     missing = 0
@@ -193,7 +202,6 @@ def run(out_path: Path, codes: list[int], key: str) -> None:
                 if entry["_error"].startswith("api 010"):
                     print("[fetch] daily quota exceeded — stopping")
                     break
-                # Otherwise swallow and continue with next target_code.
             else:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
                 f.flush()
@@ -212,11 +220,85 @@ def run(out_path: Path, codes: list[int], key: str) -> None:
     print(f"[fetch] done: calls={calls_this_run:,} collected={collected:,} missing={missing:,}")
 
 
+def run_parallel(out_path: Path, pending: list[int], key: str, workers: int) -> None:
+    """Multi-threaded fetcher. Writes to a single JSONL protected by a lock.
+    Stops all workers when daily quota hits or 010 error appears."""
+    write_lock = threading.Lock()
+    stop_event = threading.Event()
+    counters = {"calls": 0, "collected": 0, "missing": 0}
+    counter_lock = threading.Lock()
+
+    def worker(tc: int) -> None:
+        if stop_event.is_set():
+            return
+        with counter_lock:
+            if counters["calls"] >= DAILY_LIMIT_GUARD:
+                stop_event.set()
+                return
+            counters["calls"] += 1
+            current_calls = counters["calls"]
+
+        try:
+            entry = fetch_entry(key, tc)
+        except Exception as e:
+            print(f"[fetch] tc={tc} unexpected: {e}", file=sys.stderr)
+            entry = {"_error": f"unhandled {e}"}
+
+        if entry is None:
+            with counter_lock:
+                counters["missing"] += 1
+        elif "_error" in entry:
+            print(f"[fetch] tc={tc} error: {entry['_error']}", file=sys.stderr)
+            if entry["_error"].startswith("api 010"):
+                print("[fetch] daily quota exceeded — signaling stop")
+                stop_event.set()
+        else:
+            line = json.dumps(entry, ensure_ascii=False) + "\n"
+            with write_lock:
+                with out_path.open("a") as f:
+                    f.write(line)
+                    f.flush()
+            with counter_lock:
+                counters["collected"] += 1
+
+        if current_calls % 500 == 0:
+            with counter_lock:
+                print(
+                    f"[fetch] progress: calls={counters['calls']:,} "
+                    f"collected={counters['collected']:,} "
+                    f"missing={counters['missing']:,} "
+                    f"tc={tc}",
+                    flush=True,
+                )
+
+        time.sleep(RATE_SLEEP_SEC)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(worker, tc) for tc in pending]
+        try:
+            for _ in as_completed(futures):
+                if stop_event.is_set():
+                    for f in futures:
+                        f.cancel()
+                    break
+        except KeyboardInterrupt:
+            stop_event.set()
+
+    print(
+        f"[fetch] done: calls={counters['calls']:,} "
+        f"collected={counters['collected']:,} missing={counters['missing']:,}"
+    )
+
+    print(f"[fetch] done: calls={calls_this_run:,} collected={collected:,} missing={missing:,}")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", required=True, help="output JSONL path")
     p.add_argument("--codes", required=True,
                    help="file with one target_code per line")
+    p.add_argument("--workers", type=int, default=1,
+                   help="concurrent workers (default 1). Beware 50K/day cap is shared.")
     args = p.parse_args()
 
     key = os.environ.get("KRDICT_API_KEY", "").strip()
@@ -235,7 +317,7 @@ def main():
              if line.strip().isdigit()]
     codes.sort()
 
-    run(Path(args.out), codes, key)
+    run(Path(args.out), codes, key, workers=args.workers)
 
 
 if __name__ == "__main__":
