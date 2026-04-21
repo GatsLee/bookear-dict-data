@@ -1,0 +1,21 @@
+This repository distributes a processed dictionary dataset derived from:
+
+1. Open English WordNet 2025
+   Licensed under CC BY 4.0
+   https://creativecommons.org/licenses/by/4.0/
+   Copyright © 2019 The Open English WordNet Team
+   Original: https://github.com/globalwordnet/english-wordnet
+
+2. 한국어-영어 학습사전 (KRDict)
+   Licensed under CC BY-SA 2.0 KR
+   https://creativecommons.org/licenses/by-sa/2.0/kr/
+   Copyright © 국립국어원 (National Institute of Korean Language)
+   Original: https://krdict.korean.go.kr/
+   Mirror used: https://github.com/spellcheck-ko/korean-dict-nikl-krdict
+
+The combined derivative work in this repository (transformation scripts and
+merged SQLite file) is distributed under CC BY-SA 4.0 — the most restrictive
+license that applies to any component. You are free to share and adapt the
+work under the terms of that license.
+
+See NOTICE for the full attribution chain.

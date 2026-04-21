@@ -1,0 +1,49 @@
+bookear-dict-data
+=================
+
+This package combines two open dictionary datasets into a single SQLite file
+for use by the Bookear iOS app and any other consumer.
+
+Attribution chain
+-----------------
+
+1. Open English WordNet 2025
+   © 2019–present The Open English WordNet Team
+   CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/
+   Source: https://github.com/globalwordnet/english-wordnet
+   Derived from Princeton WordNet 3.0 © 2006 Princeton University.
+
+2. 한국어-영어 학습사전 (KRDict Korean-English Learners' Dictionary)
+   © 국립국어원 (National Institute of Korean Language, Republic of Korea)
+   CC BY-SA 2.0 KR — https://creativecommons.org/licenses/by-sa/2.0/kr/
+   Official site: https://krdict.korean.go.kr/eng/mainAction
+   The upstream source used here is an unofficial GitHub mirror maintained
+   by spellcheck-ko: https://github.com/spellcheck-ko/korean-dict-nikl-krdict
+
+   Per NIKL redistribution policy, **pronunciation audio files (.wav)
+   referenced in the KRDict XML are NOT redistributed** and have been
+   stripped from this dataset. Only text content (headwords, definitions,
+   English equivalents, example sentences) is included.
+
+Transformation
+--------------
+
+The `scripts/` directory contains the exact pipeline used to produce the
+merged SQLite. Running these scripts on the upstream sources (in the
+versions referenced above) will reproduce `bookear-dict-v1.sqlite` byte
+for byte.
+
+  - scripts/build_oewn.py   — OEWN LMF XML → oewn.sqlite
+  - scripts/build_krdict.py — KRDict XML → krdict.sqlite (English-keyed index)
+  - scripts/merge.py        — merges both into bookear-dict-v1.sqlite
+
+License of the derivative work
+------------------------------
+
+Because KRDict is CC BY-SA and OEWN is CC BY, and because share-alike is the
+more restrictive of the two, the combined SQLite file is distributed under
+CC BY-SA 4.0. If you use it, you must:
+
+  1. Credit both sources above.
+  2. Distribute any derivative dataset under CC BY-SA 4.0 or a compatible license.
+  3. Include this NOTICE or an equivalent attribution chain.

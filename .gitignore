@@ -1,0 +1,11 @@
+# Raw source datasets — fetch via scripts, do not commit
+data/
+
+# Build artifacts — published as GitHub Release assets, not in tree
+build/
+
+# Python virtualenv
+.venv/
+
+# macOS
+.DS_Store
